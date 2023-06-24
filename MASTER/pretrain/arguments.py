@@ -89,7 +89,10 @@ class ModelArguments:
         },
     )
     model_type: Optional[str] = field(
-        default='bert',
+        default='deberta',
+    )
+    model_decoder_type: Optional[str] = field(
+        default='bert-base-uncased',
     )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}

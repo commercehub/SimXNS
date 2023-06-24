@@ -8,7 +8,7 @@ import json
 from arguments import DataTrainingArguments, ModelArguments, \
     CondenserPreTrainingArguments as TrainingArguments
 from data import CondenserCollator
-from modeling import CondenserForPretraining, RobertaCondenserForPretraining, ELECTRACondenserForPretraining
+from modeling import CondenserForPretraining, RobertaCondenserForPretraining, ELECTRACondenserForPretraining, DebertaCondenserForPretraining
 from trainer import CondenserPreTrainer as Trainer
 import transformers
 from transformers import (
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 CONDENSER_TYPE_MAP = {
     'bert': CondenserForPretraining,
     'roberta': RobertaCondenserForPretraining,
+    "deberta": DebertaCondenserForPretraining
 }
 
 
@@ -81,7 +82,7 @@ def main():
         'json',
         data_files=data_args.train_path,
         block_size=2**25,
-    )['train']
+    )['train'].shuffle()
     dev_set = load_dataset(
         'json',
         data_files=data_args.validation_file,

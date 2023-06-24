@@ -18,9 +18,12 @@ class CondenserCollator(DataCollatorForWholeWordMask):
 
         from transformers import BertTokenizer, BertTokenizerFast
         from transformers import RobertaTokenizer, RobertaTokenizerFast
+        from transformers import DebertaTokenizer, DebertaTokenizerFast, DebertaV2Tokenizer, DebertaV2TokenizerFast
         if isinstance(self.tokenizer, (BertTokenizer, BertTokenizerFast)):
             self.whole_word_cand_indexes = self._whole_word_cand_indexes_bert
         elif isinstance(self.tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
+            self.whole_word_cand_indexes = self. _whole_word_cand_indexes_roberta
+        elif isinstance(self.tokenizer, (DebertaTokenizer, DebertaTokenizerFast, DebertaV2Tokenizer, DebertaV2TokenizerFast)):
             self.whole_word_cand_indexes = self. _whole_word_cand_indexes_roberta
         else:
             raise NotImplementedError(f'{type(self.tokenizer)} collator not supported yet')
@@ -52,7 +55,38 @@ class CondenserCollator(DataCollatorForWholeWordMask):
             else:
                 cand_indexes.append([i])
                 cand_tokens.append(token)
+                
         return cand_indexes, [1/self.frequency_dict[ele] if ele in self.frequency_dict else 1 for ele in cand_tokens]
+
+    def _whole_word_cand_indexes_deberta(self, input_tokens: List[str]):
+        cand_indexes = []
+        for (i, token) in enumerate(input_tokens):
+            if token in self.specials:
+                continue
+            
+            if token.startswith("▁") or len(cand_indexes) == 0:
+                cand_indexes.append([i])
+            else:
+                cand_indexes[-1].append(i)
+
+        return cand_indexes
+
+    def _whole_word_cand_indexes_deberta_keyword(self, input_tokens: List[str]):
+        cand_indexes = []
+        cand_tokens = []
+        for (i, token) in enumerate(input_tokens):
+            if token in self.specials:
+                continue
+            
+            if token.startswith("▁") or len(cand_indexes) == 0:
+                cand_indexes.append([i])
+                cand_tokens.append(token)
+            else:
+                cand_indexes[-1].append(i)
+                cand_tokens[-1]+=token
+
+        return cand_indexes, [1/self.frequency_dict[ele] if ele in self.frequency_dict else 1 for ele in cand_tokens]
+
 
     def _whole_word_cand_indexes_roberta(self, input_tokens: List[str]):
         cand_indexes = []
@@ -73,7 +107,7 @@ class CondenserCollator(DataCollatorForWholeWordMask):
         Get 0/1 labels for masked tokens with whole word mask proxy
         """
 
-        cand_indexes = self._whole_word_cand_indexes_bert(input_tokens)
+        cand_indexes = self._whole_word_cand_indexes_deberta(input_tokens)
 
         random.shuffle(cand_indexes)
         num_to_predict = min(max_predictions, max(1, int(round(len(input_tokens) * self.mlm_probability))))
@@ -106,7 +140,7 @@ class CondenserCollator(DataCollatorForWholeWordMask):
         Get 0/1 labels for masked tokens with whole word mask proxy
         """
 
-        cand_indexes = self._whole_word_cand_indexes_bert(input_tokens)
+        cand_indexes = self._whole_word_cand_indexes_deberta(input_tokens)
 
         random.shuffle(cand_indexes)
         num_to_predict = min(max_predictions, max(1, int(round(len(input_tokens) * 0.5))))
@@ -140,7 +174,7 @@ class CondenserCollator(DataCollatorForWholeWordMask):
         Get 0/1 labels for masked tokens with whole word mask proxy
         """
 
-        cand_indexes = self._whole_word_cand_indexes_bert(input_tokens)
+        cand_indexes = self._whole_word_cand_indexes_deberta(input_tokens)
 
         random.shuffle(cand_indexes)
         num_to_predict = min(max_predictions, max(1, int(round(len(input_tokens) * self.decoder_mlm_probability))))
@@ -173,7 +207,7 @@ class CondenserCollator(DataCollatorForWholeWordMask):
         Get 0/1 labels for masked tokens with whole word mask proxy
         """
 
-        cand_indexes, cand_probs = self._whole_word_cand_indexes_bert_keyword(input_tokens)
+        cand_indexes, cand_probs = self._whole_word_cand_indexes_deberta_keyword(input_tokens)
         assert len(cand_indexes) == len(cand_probs)
 
         num_to_predict = min(max_predictions, max(1, int(round(len([token for token in input_tokens if token not in self.specials]) * self.decoder_mlm_probability))))

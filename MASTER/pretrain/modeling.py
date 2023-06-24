@@ -6,8 +6,9 @@ from torch import nn, Tensor
 import torch.distributed as dist
 import torch.nn.functional as F
 from transformers import BertModel, BertConfig, AutoModel, AutoModelForMaskedLM, AutoConfig, PretrainedConfig, \
-    RobertaModel, ElectraForMaskedLM, ElectraModel, ElectraForMaskedLM
+    RobertaModel, ElectraForMaskedLM, ElectraModel, ElectraForMaskedLM, DebertaV2Model, DebertaV2Config
 from transformers.models.bert.modeling_bert import BertPooler, BertOnlyMLMHead, BertPreTrainingHeads, BertLayer
+from transformers.models.deberta_v2.modeling_deberta_v2 import DebertaV2Layer
 from transformers.modeling_outputs import SequenceClassifierOutput, BaseModelOutputWithPooling, MaskedLMOutput
 from transformers.models.roberta.modeling_roberta import RobertaLayer
 
@@ -464,3 +465,200 @@ class CoCondenserForPretraining(CondenserForPretraining):
         similarities.fill_diagonal_(float('-inf'))
         co_loss = F.cross_entropy(similarities, self.co_target) * self._world_size()
         return co_loss
+
+class DebertaCondenserForPretraining(CondenserForPretraining):
+    def __init__(
+        self,
+        deberta: DebertaV2Model,
+        model_args: ModelArguments,
+        data_args: DataTrainingArguments,
+        train_args: TrainingArguments
+    ):
+        super(CondenserForPretraining, self).__init__()
+        self.lm = deberta
+        self.config = self.lm.config
+        bert_config = BertConfig.from_pretrained(model_args.model_decoder_type)
+        self.c_head = nn.ModuleList(
+            [BertLayer(bert_config) for _ in range(model_args.n_head_layers)]
+        )
+        self.query_head = nn.ModuleList(
+            [BertLayer(bert_config) for _ in range(model_args.n_head_layers)]
+        )
+        self.gpt_head = nn.ModuleList(
+            [BertLayer(bert_config) for _ in range(model_args.n_head_layers)]
+        )
+        self.next_head = nn.ModuleList(
+            [BertLayer(bert_config) for _ in range(model_args.n_head_layers)]
+        )
+        self.overlap_head = nn.ModuleList(
+            [BertLayer(bert_config) for _ in range(model_args.n_head_layers)]
+        )
+        #self.c_head.apply(self.lm._init_weights)
+        self.cross_entropy = nn.CrossEntropyLoss()
+
+        self.model_args = model_args
+        self.train_args = train_args
+        self.data_args = data_args
+
+    def forward(self, model_input, labels):
+        lm_out: MaskedLMOutput = self.lm(
+            input_ids=model_input['input_ids'],
+            attention_mask=model_input['attention_mask'],
+            labels=labels,
+            output_hidden_states=True,
+            return_dict=True
+        )
+        cls_hiddens = lm_out.hidden_states[-1][:, :1]
+
+        # decoder with itself
+        #print(self.lm)
+        #print(f"Decode Input Ids: {model_input['decoder_input_ids']}")
+        skip_hiddens = self.lm.deberta.embeddings(input_ids = model_input['decoder_input_ids']) #lm_out.hidden_states[self.model_args.skip_from]
+        hiddens = torch.cat([cls_hiddens, skip_hiddens[:, 1:]], dim=1)
+        #print(f"Hiddens: {hiddens}")
+        #print(f"Attention Mask: {model_input['attention_mask']}")
+        attention_mask = self.lm.get_extended_attention_mask(
+            model_input['attention_mask'],
+            model_input['attention_mask'].shape,
+            model_input['attention_mask'].device
+        )
+        #print(f"Attention Mask: {attention_mask}")
+        for layer in self.c_head:
+            layer_out = layer(
+                hiddens,
+                attention_mask,
+            )
+            hiddens = layer_out[0]
+        #print(f"Hiddens Updated: {hiddens}")
+        loss = self.mlm_loss(hiddens, model_input['decoder_labels'])
+
+        #print(f"Loss: {loss}")
+        # decoder with query
+        query_skip_hiddens = self.lm.deberta.embeddings(input_ids = model_input['query_input_ids']) #lm_out.hidden_states[self.model_args.skip_from]
+        query_hiddens = torch.cat([cls_hiddens, query_skip_hiddens[:, 1:]], dim=1)
+        query_attention_mask = self.lm.get_extended_attention_mask(
+            model_input['query_attention_mask'],
+            model_input['query_attention_mask'].shape,
+            model_input['query_attention_mask'].device
+        )
+        for layer in self.query_head:
+            query_layer_out = layer(
+                query_hiddens,
+                query_attention_mask,
+            )
+            query_hiddens = query_layer_out[0]
+        query_loss = self.mlm_loss(query_hiddens, model_input['query_labels'])
+
+        # decoder with query
+        gpt_skip_hiddens = self.lm.deberta.embeddings(input_ids = model_input['gpt_input_ids']) #lm_out.hidden_states[self.model_args.skip_from]
+        gpt_hiddens = torch.cat([cls_hiddens, gpt_skip_hiddens[:, 1:]], dim=1)
+        gpt_attention_mask = self.lm.get_extended_attention_mask(
+            model_input['gpt_attention_mask'],
+            model_input['gpt_attention_mask'].shape,
+            model_input['gpt_attention_mask'].device
+        )
+        for layer in self.gpt_head:
+            gpt_layer_out = layer(
+                gpt_hiddens,
+                gpt_attention_mask,
+            )
+            gpt_hiddens = gpt_layer_out[0]
+        gpt_loss = self.mlm_loss(gpt_hiddens, model_input['gpt_labels'])
+
+        # next encoder-decoder
+        next_encoder_lm_out: MaskedLMOutput = self.lm(
+            input_ids=model_input['next_encoder_input_ids'],
+            attention_mask=model_input['next_encoder_attention_mask'],
+            labels=model_input['next_encoder_labels'],
+            output_hidden_states=True,
+            return_dict=True
+        )
+        next_decoder_cls_hiddens = next_encoder_lm_out.hidden_states[-1][:, :1]
+
+        # decoder with itself
+        next_decoder_skip_hiddens = self.lm.deberta.embeddings(input_ids=model_input['next_decoder_input_ids'])  # lm_out.hidden_states[self.model_args.skip_from]
+        next_decoder_hiddens = torch.cat([next_decoder_cls_hiddens, next_decoder_skip_hiddens[:, 1:]], dim=1)
+        next_decoder_attention_mask = self.lm.get_extended_attention_mask(
+            model_input['next_decoder_attention_mask'],
+            model_input['next_decoder_attention_mask'].shape,
+            model_input['next_decoder_attention_mask'].device
+        )
+        for layer in self.next_head:
+            next_decoder_layer_out = layer(
+                next_decoder_hiddens,
+                next_decoder_attention_mask,
+            )
+            next_decoder_hiddens = next_decoder_layer_out[0]
+        next_loss = self.mlm_loss(next_decoder_hiddens, model_input['next_decoder_labels'])
+
+        # overlap encoder-decoder
+        overlap_encoder_lm_out: MaskedLMOutput = self.lm(
+            input_ids=model_input['overlap_encoder_input_ids'],
+            attention_mask=model_input['attention_mask'],
+            labels=model_input['overlap_encoder_labels'],
+            output_hidden_states=True,
+            return_dict=True
+        )
+        overlap_decoder_cls_hiddens = overlap_encoder_lm_out.hidden_states[-1][:, :1]
+
+        # decoder with itself
+        overlap_decoder_skip_hiddens = self.lm.deberta.embeddings(input_ids=model_input['overlap_decoder_input_ids'])  # lm_out.hidden_states[self.model_args.skip_from]
+        overlap_decoder_hiddens = torch.cat([overlap_decoder_cls_hiddens, overlap_decoder_skip_hiddens[:, 1:]], dim=1)
+        for layer in self.overlap_head:
+            overlap_decoder_layer_out = layer(
+                overlap_decoder_hiddens,
+                attention_mask,
+            )
+            overlap_decoder_hiddens = overlap_decoder_layer_out[0]
+        overlap_loss = self.mlm_loss(overlap_decoder_hiddens, model_input['overlap_decoder_labels'])
+
+        final_loss = loss + query_loss + gpt_loss + next_loss + overlap_loss + lm_out.loss + next_encoder_lm_out.loss + overlap_encoder_lm_out.loss
+
+        return final_loss
+
+
+    def mlm_loss(self, hiddens, labels):
+        pred_scores = self.lm.cls(hiddens)
+        masked_lm_loss = self.cross_entropy(
+            pred_scores.view(-1, self.lm.config.vocab_size),
+            labels.view(-1)
+        )
+        return masked_lm_loss
+
+
+    @classmethod
+    def from_pretrained(
+            cls, model_args: ModelArguments, data_args: DataTrainingArguments, train_args: TrainingArguments,
+            *args, **kwargs
+    ):
+        hf_model = AutoModelForMaskedLM.from_pretrained(*args, **kwargs)
+        model = cls(hf_model, model_args, data_args, train_args)
+        path = args[0]
+        if os.path.exists(os.path.join(path, 'model.pt')):
+            logger.info('loading extra weights from local files')
+            model_dict = torch.load(os.path.join(path, 'model.pt'), map_location="cpu")
+            load_result = model.load_state_dict(model_dict, strict=False)
+        return model
+
+    @classmethod
+    def from_config(
+            cls,
+            config: PretrainedConfig,
+            model_args: ModelArguments,
+            data_args: DataTrainingArguments,
+            train_args: TrainingArguments,
+    ):
+        hf_model = AutoModelForMaskedLM.from_config(config)
+        model = cls(hf_model, model_args, data_args, train_args)
+
+        return model
+
+    def save_pretrained(self, output_dir: str):
+        self.lm.save_pretrained(output_dir)
+        model_dict = self.state_dict()
+        hf_weight_keys = [k for k in model_dict.keys() if k.startswith('lm')]
+        warnings.warn(f'omiting {len(hf_weight_keys)} transformer weights')
+        for k in hf_weight_keys:
+            model_dict.pop(k)
+        torch.save(model_dict, os.path.join(output_dir, 'model.pt'))
+        torch.save([self.data_args, self.model_args, self.train_args], os.path.join(output_dir, 'args.pt'))
