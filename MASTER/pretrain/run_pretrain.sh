@@ -1,9 +1,10 @@
-CUDA_VISIBLE_DEVICES=0 python run_pre_training.py \
+CUDA_VISIBLE_DEVICES=0 deepspeed run_pre_training.py \
+  --deepspeed ./ds_config.json \
   --output_dir ckpt/MASTER \
   --model_type deberta \
   --model_name_or_path microsoft/deberta-v3-base \
   --do_train \
-  --save_steps 10000 \
+  --save_steps 5000 \
   --save_total_limit 2 \
   --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 1 \
@@ -11,10 +12,10 @@ CUDA_VISIBLE_DEVICES=0 python run_pre_training.py \
   --learning_rate 3e-4 \
   --num_train_epochs 3 \
   --overwrite_output_dir \
-  --dataloader_num_workers 4 \
-  --n_head_layers 1 \
+  --dataloader_num_workers 8 \
+  --n_head_layers 2 \
   --skip_from 6 \
-  --max_seq_length 128 \
+  --max_seq_length 256 \
   --train_dir /home/ec2-user/David/Github/cadeera-semantic-engine-prototype/datasets/train/ \
   --frequency_dict /home/ec2-user/David/Github/cadeera-semantic-engine-prototype/datasets/frequency_dict.json \
   --weight_decay 0.01 \
