@@ -1,6 +1,7 @@
 
+{
 "fp16": {
-    "enabled": "auto",
+    "enabled": true,
     "loss_scale": 0,
     "loss_scale_window": 1000,
     "initial_scale_power": 16,
@@ -47,10 +48,9 @@
     "stage3_max_reuse_distance": 1e8,
     "stage3_gather_16bit_weights_on_model_save": true
 },
-
 "gradient_accumulation_steps": "auto",
 "gradient_clipping": "auto",
-"steps_per_print": 500,
+"steps_per_print": 100,
 "train_batch_size": "auto",
 "train_micro_batch_size_per_gpu": "auto",
 "wall_clock_breakdown": false

@@ -1,23 +1,23 @@
-CUDA_VISIBLE_DEVICES=0 deepspeed run_pre_training.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3 deepspeed run_pre_training.py \
   --deepspeed ./ds_config.json \
-  --output_dir ckpt/MASTER \
   --model_type deberta \
-  --model_name_or_path microsoft/deberta-v3-base \
+  --model_name_or_path microsoft/deberta-v3-large \
   --do_train \
-  --save_steps 5000 \
+  --save_steps 1000 \
   --save_total_limit 2 \
-  --per_device_train_batch_size 4 \
-  --gradient_accumulation_steps 1 \
+  --per_device_train_batch_size 5 \
+  --gradient_accumulation_steps 4 \
   --warmup_ratio 0.1 \
-  --learning_rate 3e-4 \
+  --learning_rate 3e-5 \
   --num_train_epochs 3 \
   --overwrite_output_dir \
   --dataloader_num_workers 8 \
   --n_head_layers 2 \
   --skip_from 6 \
   --max_seq_length 256 \
-  --train_dir /home/ec2-user/David/Github/cadeera-semantic-engine-prototype/datasets/train/ \
-  --frequency_dict /home/ec2-user/David/Github/cadeera-semantic-engine-prototype/datasets/frequency_dict.json \
+  --train_dir /home/ec2-user/cadeera-datasets/cadeera-retailer-data/2023/6/21/train/ \
+  --frequency_dict /home/ec2-user/cadeera-datasets/cadeera-retailer-data/2023/6/21/frequency_dict.json \
+  --output_dir /home/ec2-user/cadeera-datasets/master_models/initial_scrape_test/ \
   --weight_decay 0.01 \
   --late_mlm \
-  --fp16
+  --fp16 \
