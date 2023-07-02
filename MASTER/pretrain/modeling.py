@@ -656,9 +656,12 @@ class DebertaCondenserForPretraining(CondenserForPretraining):
     def save_pretrained(self, output_dir: str):
         self.lm.save_pretrained(output_dir)
         model_dict = self.state_dict()
+        lm_model_dict = {}
         hf_weight_keys = [k for k in model_dict.keys() if k.startswith('lm')]
         warnings.warn(f'omiting {len(hf_weight_keys)} transformer weights')
         for k in hf_weight_keys:
+            lm_model_dict[k.replace("lm.","")] = model_dict[k]
             model_dict.pop(k)
         torch.save(model_dict, os.path.join(output_dir, 'model.pt'))
+        torch.save(model_dict, os.path.join(output_dir, 'lm_model.pt'))
         torch.save([self.data_args, self.model_args, self.train_args], os.path.join(output_dir, 'args.pt'))
