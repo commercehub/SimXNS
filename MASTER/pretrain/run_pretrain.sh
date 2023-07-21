@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=0 deepspeed run_pre_training.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3 deepspeed run_pre_training.py \
   --deepspeed ./ds_config.json \
   --model_type deberta \
   --model_name_or_path microsoft/deberta-v3-large \
