@@ -10,6 +10,7 @@ from arguments import DataTrainingArguments, ModelArguments, \
 from data import CondenserCollator
 from modeling import CondenserForPretraining, RobertaCondenserForPretraining, ELECTRACondenserForPretraining, DebertaCondenserForPretraining
 from trainer import CondenserPreTrainer as Trainer
+from transformers import EarlyStoppingCallback
 import transformers
 from transformers import (
     CONFIG_MAPPING,
@@ -87,8 +88,7 @@ def main():
         'json',
         data_files=data_args.validation_file,
         block_size=2**25
-    )['train'] \
-        if data_args.validation_file is not None else None
+    )['train'].shuffle().select(range(5000)) if data_args.validation_file is not None else None
 
     if model_args.config_name:
         config = AutoConfig.from_pretrained(model_args.config_name, cache_dir=model_args.cache_dir)
@@ -152,6 +152,7 @@ def main():
         eval_dataset=dev_set,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        callbacks = [EarlyStoppingCallback(early_stopping_patience=3, early_stopping_threshold=0.01)]
     )
 
     # Training

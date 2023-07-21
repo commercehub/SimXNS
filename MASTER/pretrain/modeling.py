@@ -663,5 +663,5 @@ class DebertaCondenserForPretraining(CondenserForPretraining):
             lm_model_dict[k.replace("lm.","")] = model_dict[k]
             model_dict.pop(k)
         torch.save(model_dict, os.path.join(output_dir, 'model.pt'))
-        torch.save(model_dict, os.path.join(output_dir, 'lm_model.pt'))
+        torch.save(lm_model_dict, os.path.join(output_dir, 'lm_model.pt'))
         torch.save([self.data_args, self.model_args, self.train_args], os.path.join(output_dir, 'args.pt'))

@@ -1,23 +1,30 @@
-CUDA_VISIBLE_DEVICES=0,1,2,3 deepspeed run_pre_training.py \
+CUDA_VISIBLE_DEVICES=0 deepspeed run_pre_training.py \
   --deepspeed ./ds_config.json \
   --model_type deberta \
   --model_name_or_path microsoft/deberta-v3-large \
   --do_train \
-  --save_steps 1000 \
-  --save_total_limit 2 \
+  --do_eval \
+  --save_steps 25000 \
+  --save_total_limit 3 \
+  --evaluation_strategy steps \
+  --eval_steps 25000 \
+  --load_best_model_at_end true \
+  --greater_is_better false \
+  --metric_for_best_model eval_loss \
   --per_device_train_batch_size 5 \
   --gradient_accumulation_steps 4 \
   --warmup_ratio 0.1 \
   --learning_rate 3e-5 \
-  --num_train_epochs 3 \
+  --num_train_epochs 2 \
   --overwrite_output_dir \
   --dataloader_num_workers 8 \
   --n_head_layers 2 \
   --skip_from 6 \
   --max_seq_length 256 \
-  --train_dir /home/ec2-user/cadeera-datasets/cadeera-retailer-data/2023/6/21/train/ \
-  --frequency_dict /home/ec2-user/cadeera-datasets/cadeera-retailer-data/2023/6/21/frequency_dict.json \
-  --output_dir /home/ec2-user/cadeera-datasets/master_models/initial_scrape_test/ \
-  --weight_decay 0.01 \
+  --train_dir /home/ec2-user/cadeera-datasets/cadeera-retailer-data/10_retailers_complete_20230717/train/ \
+  --validation_file /home/ec2-user/cadeera-datasets/cadeera-retailer-data/10_retailers_complete_20230717/validation/validation.json \
+  --frequency_dict /home/ec2-user/cadeera-datasets/cadeera-retailer-data/10_retailers_complete_20230717/frequency_dict.json \
+  --output_dir /home/ec2-user/cadeera-datasets/master_models/10_retailers_full/ \
+  --weight_decay 0.001   \
   --late_mlm \
   --fp16 \
